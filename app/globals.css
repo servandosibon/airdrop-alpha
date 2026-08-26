@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0b0e15;
+  color: #f3f5fa;
+}
+
+::selection {
+  background-color: rgba(232, 163, 61, 0.35);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.mask-fade-bottom {
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
