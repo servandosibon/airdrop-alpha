@@ -8,6 +8,7 @@ const body = Inter({ subsets: ["latin"], variable: "--font-body" });
 const mono = IBM_Plex_Mono({ subsets: ["latin"], variable: "--font-mono", weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "Airdrop Alpha — Find the airdrops worth your time",
   description:
     "We analyze crypto airdrop opportunities and rank them by expected value, cost, time, risk and probability of reward.",

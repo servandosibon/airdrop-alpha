@@ -31,3 +31,26 @@ export function Chip({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
+
+export function SourceTypeBadge({ sourceType }: { sourceType?: "live_defillama" | "curated_research" }) {
+  if (!sourceType) return null;
+  const isLive = sourceType === "live_defillama";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${
+        isLive
+          ? "text-signal-teal border-signal-tealDim bg-signal-tealDim/30"
+          : "text-paper-500 border-ink-600 bg-ink-700"
+      }`}
+      title={isLive ? "Backed by a live DeFiLlama data fetch" : "Manually researched and curated"}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-signal-teal" : "bg-paper-500"}`} />
+      {isLive ? "Live on-chain data" : "Curated research"}
+    </span>
+  );
+}
+
+export function VerifiedBadge({ date }: { date?: string }) {
+  if (!date) return null;
+  return <span className="text-[11px] text-paper-500">Verified: {date}</span>;
+}

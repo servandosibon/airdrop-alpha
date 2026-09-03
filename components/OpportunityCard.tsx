@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { AirdropOpportunity } from "@/lib/types";
 import ScoreGauge from "./ScoreGauge";
-import { LevelBadge, StatusBadge } from "./Badge";
+import { LevelBadge, StatusBadge, SourceTypeBadge, VerifiedBadge } from "./Badge";
 import WatchButton from "./WatchButton";
+import { LiveDataChip } from "./LiveData";
 
 function money(n: number) {
   return `$${n.toLocaleString("en-US")}`;
@@ -33,6 +34,11 @@ export default function OpportunityCard({ op }: { op: AirdropOpportunity }) {
             <p className="text-xs text-paper-500 mt-0.5">
               {op.chain} · {op.category}
             </p>
+            {op.dataSources?.defillama && (
+              <div className="mt-1">
+                <LiveDataChip data={op.dataSources.defillama} />
+              </div>
+            )}
           </div>
         </div>
         <ScoreGauge score={op.alphaScore} size={64} />
@@ -58,12 +64,17 @@ export default function OpportunityCard({ op }: { op: AirdropOpportunity }) {
       </div>
 
       <div className="flex items-center justify-between mt-4 pt-4 border-t border-ink-600">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <LevelBadge level={op.tokenProbability} />
           <LevelBadge level={op.risk} invert />
           <LevelBadge level={op.competition} invert />
         </div>
         <WatchButton slug={op.slug} compact />
+      </div>
+
+      <div className="flex items-center justify-between mt-3 flex-wrap gap-1.5">
+        <SourceTypeBadge sourceType={op.sourceType} />
+        <VerifiedBadge date={op.lastVerified} />
       </div>
     </Link>
   );

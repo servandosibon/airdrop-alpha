@@ -1,18 +1,50 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getOpportunityBySlug, opportunities } from "@/lib/data";
+import { opportunities } from "@/lib/data";
+import { getLiveOpportunityBySlug } from "@/lib/opportunities-live";
 import ScoreGauge from "@/components/ScoreGauge";
 import ScoreBreakdown from "@/components/ScoreBreakdown";
-import { LevelBadge, StatusBadge, Chip } from "@/components/Badge";
+import { LevelBadge, StatusBadge, Chip, SourceTypeBadge, VerifiedBadge } from "@/components/Badge";
 import WatchButton from "@/components/WatchButton";
+import { LiveDataPanel } from "@/components/LiveData";
+import FarmingStepChecklist from "@/components/FarmingStepChecklist";
+import { timeCommitmentBucket, timeCommitmentLabel } from "@/lib/farmer-filters";
+
+export const revalidate = 3600; // 60 min — matches the DeFiLlama ingestion cadence
 
 export function generateStaticParams() {
   return opportunities.map((o) => ({ slug: o.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }) {
-  const op = getOpportunityBySlug(params.slug);
-  return { title: op ? `${op.name} — Airdrop Alpha` : "Not found" };
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  // Same live-data lookup the page itself uses — Next.js dedupes identical
+  // fetches within a request, so this doesn't double the DeFiLlama call.
+  const op = await getLiveOpportunityBySlug(params.slug);
+
+  if (!op) {
+    return { title: "Opportunity Not Found | Airdrop Alpha" };
+  }
+
+  const title = `${op.name} Airdrop Strategy & Score (${op.alphaScore}/100) | Airdrop Alpha`;
+  const difficulty = timeCommitmentLabel(timeCommitmentBucket(op)).replace(/\s*\(.*\)/, ""); // "Quick"/"Moderate"/"Intensive"
+  const description = `${op.name} on ${op.chain} (${op.category}) — Airdrop Alpha Score ${op.alphaScore}/100, ${difficulty.toLowerCase()} farming difficulty. See the full score breakdown, risks and step-by-step farming guide.`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      url: `/opportunities/${op.slug}`,
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
 }
 
 function money(n: number) {
@@ -25,8 +57,8 @@ function formatTime(minutes: number) {
   return `${h} hr / week`;
 }
 
-export default function OpportunityDetailPage({ params }: { params: { slug: string } }) {
-  const op = getOpportunityBySlug(params.slug);
+export default async function OpportunityDetailPage({ params }: { params: { slug: string } }) {
+  const op = await getLiveOpportunityBySlug(params.slug);
   if (!op) notFound();
 
   return (
@@ -59,6 +91,10 @@ export default function OpportunityDetailPage({ params }: { params: { slug: stri
               <Chip key={t}>{t}</Chip>
             ))}
           </div>
+          <div className="flex items-center gap-3 mt-3 flex-wrap">
+            <SourceTypeBadge sourceType={op.sourceType} />
+            <VerifiedBadge date={op.lastVerified} />
+          </div>
         </div>
         <WatchButton slug={op.slug} />
       </div>
@@ -81,9 +117,19 @@ export default function OpportunityDetailPage({ params }: { params: { slug: stri
         <MetricBadge label="Risk" node={<LevelBadge level={op.risk} invert />} />
       </div>
 
+      {/* Verified data (external, objective) — kept visually separate from our analysis below */}
+      {op.dataSources?.defillama && (
+        <div className="mt-8">
+          <LiveDataPanel data={op.dataSources.defillama} />
+        </div>
+      )}
+
       {/* Score breakdown */}
       <section className="mt-10">
-        <h2 className="font-display font-700 text-lg text-paper-100 mb-1">Why {op.alphaScore}/100?</h2>
+        <h2 className="font-display font-700 text-lg text-paper-100 mb-1">
+          <span className="text-paper-500 font-normal text-sm mr-2">Airdrop Alpha analysis ·</span>
+          Why {op.alphaScore}/100?
+        </h2>
         <p className="text-sm text-paper-500 mb-4">
           Breakdown of the Airdrop Alpha Score.{" "}
           <Link href="/methodology" className="text-signal-teal hover:underline">
@@ -122,26 +168,7 @@ export default function OpportunityDetailPage({ params }: { params: { slug: stri
       {/* How to farm */}
       <section className="mt-10">
         <h2 className="font-display font-700 text-lg text-paper-100 mb-4">How to farm</h2>
-        <ol className="space-y-4">
-          {op.farmingSteps.map((step, i) => (
-            <li key={i} className="flex gap-4 rounded-lg border border-ink-600 bg-ink-800 p-4">
-              <span className="font-mono text-signal-amber text-sm w-6 flex-shrink-0">{String(i + 1).padStart(2, "0")}</span>
-              <div>
-                <div className="font-medium text-paper-100">{step.title}</div>
-                <p className="text-sm text-paper-500 mt-0.5">{step.description}</p>
-                <div className="flex gap-3 mt-1.5 text-xs text-paper-500 font-mono">
-                  {step.estimatedCost && <span>cost: {step.estimatedCost}</span>}
-                  {step.estimatedTime && <span>time: {step.estimatedTime}</span>}
-                  {step.url && (
-                    <a href={step.url} target="_blank" rel="noopener noreferrer" className="text-signal-teal hover:underline">
-                      link ↗
-                    </a>
-                  )}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <FarmingStepChecklist slug={op.slug} steps={op.farmingSteps} />
       </section>
 
       <p className="text-xs text-paper-500 mt-10 pt-6 border-t border-ink-600 leading-relaxed">

@@ -1,11 +1,15 @@
 import Link from "next/link";
-import { opportunities } from "@/lib/data";
+import { getLiveOpportunities } from "@/lib/opportunities-live";
 import ScoreGauge from "@/components/ScoreGauge";
 import { LevelBadge } from "@/components/Badge";
+import { LiveDataChip } from "@/components/LiveData";
 
-const TOP = [...opportunities].sort((a, b) => b.alphaScore - a.alphaScore).slice(0, 3);
+export const revalidate = 3600; // 60 min — matches the DeFiLlama ingestion cadence
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const opportunities = await getLiveOpportunities();
+  const TOP = [...opportunities].sort((a, b) => b.alphaScore - a.alphaScore).slice(0, 3);
+
   return (
     <div>
       {/* Hero */}
@@ -51,12 +55,17 @@ export default function LandingPage() {
               {TOP.map((op, i) => (
                 <div key={op.id} className="flex items-center gap-4 py-4 px-2">
                   <span className="font-mono text-paper-500 text-sm w-4">{i + 1}</span>
-                  <ScoreGauge score={op.alphaScore} size={60} />
+                  <ScoreGauge score={op.alphaScore} size={52} />
                   <div className="min-w-0 flex-1">
                     <div className="font-display font-700 text-paper-100 truncate">{op.name}</div>
                     <div className="text-xs text-paper-500">
                       {op.chain} · {op.category}
                     </div>
+                    {op.dataSources?.defillama && (
+                      <div className="mt-0.5">
+                        <LiveDataChip data={op.dataSources.defillama} />
+                      </div>
+                    )}
                   </div>
                   <LevelBadge level={op.tokenProbability} />
                 </div>

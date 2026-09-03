@@ -1,8 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { AirdropOpportunity, Level } from "@/lib/types";
 import { evPerHour, expectedValue } from "@/lib/scoring";
+import {
+  CAPITAL_OPTIONS,
+  TIME_COMMITMENT_OPTIONS,
+  capitalBucket,
+  timeCommitmentBucket,
+  CapitalTier,
+  TimeCommitmentTier,
+} from "@/lib/farmer-filters";
+import { slugify, matchSlug } from "@/lib/url-filters";
 import OpportunityCard from "./OpportunityCard";
 
 type SortKey = "score" | "ev" | "evPerHour" | "cost" | "time" | "tokenProbability" | "recent";
@@ -20,23 +30,15 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 const LEVELS: Level[] = ["low", "medium", "high"];
 const SCORE_FLOORS = [0, 70, 80, 90];
 
-function costBucket(op: AirdropOpportunity): string {
-  const max = op.estimatedCost.max;
-  if (max === 0) return "Free";
-  if (max < 10) return "<$10";
-  if (max <= 50) return "$10–50";
-  return "$50+";
+function isLevel(v: string | null): v is Level {
+  return v === "low" || v === "medium" || v === "high";
 }
-const COST_BUCKETS = ["Free", "<$10", "$10–50", "$50+"];
-
-function timeBucket(op: AirdropOpportunity): string {
-  const m = op.estimatedTimeMinutesPerWeek;
-  if (m < 30) return "<30 min";
-  if (m <= 60) return "30–60 min";
-  if (m <= 180) return "1–3 hours";
-  return "3+ hours";
+function isCapitalTier(v: string | null): v is CapitalTier {
+  return v === "low" || v === "medium" || v === "high";
 }
-const TIME_BUCKETS = ["<30 min", "30–60 min", "1–3 hours", "3+ hours"];
+function isTimeCommitmentTier(v: string | null): v is TimeCommitmentTier {
+  return v === "quick" || v === "moderate" || v === "intensive";
+}
 
 interface Props {
   opportunities: AirdropOpportunity[];
@@ -45,27 +47,101 @@ interface Props {
 }
 
 export default function OpportunityExplorer({ opportunities, chains, categories }: Props) {
-  const [chain, setChain] = useState<string>("all");
-  const [category, setCategory] = useState<string>("all");
-  const [cost, setCost] = useState<string>("all");
-  const [time, setTime] = useState<string>("all");
-  const [risk, setRisk] = useState<Level | "all">("all");
-  const [tokenProbability, setTokenProbability] = useState<Level | "all">("all");
-  const [scoreFloor, setScoreFloor] = useState<number>(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Initial state is read once from the URL on mount, so a shared link like
+  // /opportunities?chain=solana&capital=low lands on the right filters
+  // immediately — no flash of the unfiltered list.
+  const [chain, setChainRaw] = useState<string>(() => matchSlug(chains, searchParams.get("chain")) ?? "all");
+  const [category, setCategoryRaw] = useState<string>(
+    () => matchSlug(categories, searchParams.get("category")) ?? "all"
+  );
+  const [capital, setCapitalRaw] = useState<CapitalTier | "all">(() => {
+    const v = searchParams.get("capital");
+    return isCapitalTier(v) ? v : "all";
+  });
+  const [timeCommitment, setTimeCommitmentRaw] = useState<TimeCommitmentTier | "all">(() => {
+    const v = searchParams.get("time");
+    return isTimeCommitmentTier(v) ? v : "all";
+  });
+  const [risk, setRiskRaw] = useState<Level | "all">(() => {
+    const v = searchParams.get("risk");
+    return isLevel(v) ? v : "all";
+  });
+  const [tokenProbability, setTokenProbabilityRaw] = useState<Level | "all">(() => {
+    const v = searchParams.get("tokenProbability");
+    return isLevel(v) ? v : "all";
+  });
+  const [scoreFloor, setScoreFloorRaw] = useState<number>(() => {
+    const v = Number(searchParams.get("minScore"));
+    return SCORE_FLOORS.includes(v) ? v : 0;
+  });
+  // Sort order isn't treated as a "filter" for URL-sharing purposes — it
+  // changes display order, not which opportunities are in the list.
   const [sort, setSort] = useState<SortKey>("score");
+
+  /** Merges the given key/value pairs into the current URL's query string. A null/"all"/"0" value removes that key. */
+  const updateQuery = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null) params.delete(key);
+        else params.set(key, value);
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const setChain = (v: string) => {
+    setChainRaw(v);
+    updateQuery({ chain: v === "all" ? null : slugify(v) });
+  };
+  const setCategory = (v: string) => {
+    setCategoryRaw(v);
+    updateQuery({ category: v === "all" ? null : slugify(v) });
+  };
+  const setCapital = (v: string) => {
+    const tier = isCapitalTier(v) ? v : "all";
+    setCapitalRaw(tier);
+    updateQuery({ capital: tier === "all" ? null : tier });
+  };
+  const setTimeCommitment = (v: string) => {
+    const tier = isTimeCommitmentTier(v) ? v : "all";
+    setTimeCommitmentRaw(tier);
+    updateQuery({ time: tier === "all" ? null : tier });
+  };
+  const setRisk = (v: string) => {
+    const level = isLevel(v) ? v : "all";
+    setRiskRaw(level);
+    updateQuery({ risk: level === "all" ? null : level });
+  };
+  const setTokenProbability = (v: string) => {
+    const level = isLevel(v) ? v : "all";
+    setTokenProbabilityRaw(level);
+    updateQuery({ tokenProbability: level === "all" ? null : level });
+  };
+  const setScoreFloor = (v: string) => {
+    const n = Number(v);
+    setScoreFloorRaw(n);
+    updateQuery({ minScore: n === 0 ? null : v });
+  };
 
   const filtered = useMemo(() => {
     return opportunities.filter((op) => {
       if (chain !== "all" && op.chain !== chain) return false;
       if (category !== "all" && op.category !== category) return false;
-      if (cost !== "all" && costBucket(op) !== cost) return false;
-      if (time !== "all" && timeBucket(op) !== time) return false;
+      if (capital !== "all" && capitalBucket(op) !== capital) return false;
+      if (timeCommitment !== "all" && timeCommitmentBucket(op) !== timeCommitment) return false;
       if (risk !== "all" && op.risk !== risk) return false;
       if (tokenProbability !== "all" && op.tokenProbability !== tokenProbability) return false;
       if (op.alphaScore < scoreFloor) return false;
       return true;
     });
-  }, [opportunities, chain, category, cost, time, risk, tokenProbability, scoreFloor]);
+  }, [opportunities, chain, category, capital, timeCommitment, risk, tokenProbability, scoreFloor]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -92,41 +168,53 @@ export default function OpportunityExplorer({ opportunities, chains, categories 
   }, [filtered, sort]);
 
   const resetFilters = () => {
-    setChain("all");
-    setCategory("all");
-    setCost("all");
-    setTime("all");
-    setRisk("all");
-    setTokenProbability("all");
-    setScoreFloor(0);
+    setChainRaw("all");
+    setCategoryRaw("all");
+    setCapitalRaw("all");
+    setTimeCommitmentRaw("all");
+    setRiskRaw("all");
+    setTokenProbabilityRaw("all");
+    setScoreFloorRaw(0);
+    router.replace(pathname, { scroll: false });
   };
 
-  const activeFilterCount = [chain, category, cost, time, risk, tokenProbability].filter((v) => v !== "all").length + (scoreFloor > 0 ? 1 : 0);
+  const activeFilterCount =
+    [chain, category, capital, timeCommitment, risk, tokenProbability].filter((v) => v !== "all").length +
+    (scoreFloor > 0 ? 1 : 0);
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-6">
-        <Select label="Chain" value={chain} onChange={setChain} options={["all", ...chains]} />
-        <Select label="Category" value={category} onChange={setCategory} options={["all", ...categories]} />
-        <Select label="Cost" value={cost} onChange={setCost} options={["all", ...COST_BUCKETS]} />
-        <Select label="Time" value={time} onChange={setTime} options={["all", ...TIME_BUCKETS]} />
-        <Select label="Risk" value={risk} onChange={(v) => setRisk(v as Level | "all")} options={["all", ...LEVELS]} />
+        <Select label="Chain" value={chain} onChange={setChain} options={toOptions(["all", ...chains])} />
+        <Select label="Category" value={category} onChange={setCategory} options={toOptions(["all", ...categories])} />
+        <Select
+          label="Capital"
+          value={capital}
+          onChange={setCapital}
+          options={[{ value: "all", label: "all" }, ...CAPITAL_OPTIONS]}
+        />
+        <Select
+          label="Time commitment"
+          value={timeCommitment}
+          onChange={setTimeCommitment}
+          options={[{ value: "all", label: "all" }, ...TIME_COMMITMENT_OPTIONS]}
+        />
+        <Select label="Risk" value={risk} onChange={setRisk} options={toOptions(["all", ...LEVELS])} />
         <Select
           label="Token prob."
           value={tokenProbability}
-          onChange={(v) => setTokenProbability(v as Level | "all")}
-          options={["all", ...LEVELS]}
+          onChange={setTokenProbability}
+          options={toOptions(["all", ...LEVELS])}
         />
         <Select
           label="Min score"
           value={String(scoreFloor)}
-          onChange={(v) => setScoreFloor(Number(v))}
-          options={SCORE_FLOORS.map(String)}
-          optionLabel={(v) => (v === "0" ? "all" : `${v}+`)}
+          onChange={setScoreFloor}
+          options={SCORE_FLOORS.map((n) => ({ value: String(n), label: n === 0 ? "all" : `${n}+` }))}
         />
         {activeFilterCount > 0 && (
           <button onClick={resetFilters} className="text-xs text-signal-amber hover:underline ml-1">
-            Clear filters ({activeFilterCount})
+            Clear all filters ({activeFilterCount})
           </button>
         )}
 
@@ -155,7 +243,7 @@ export default function OpportunityExplorer({ opportunities, chains, categories 
           <p className="font-display text-paper-100 mb-1">Nothing matches those filters.</p>
           <p className="text-sm">Try widening your criteria — or clear filters to see everything tracked.</p>
           <button onClick={resetFilters} className="mt-4 text-sm text-signal-amber hover:underline">
-            Clear filters
+            Clear all filters
           </button>
         </div>
       ) : (
@@ -169,18 +257,20 @@ export default function OpportunityExplorer({ opportunities, chains, categories 
   );
 }
 
+function toOptions(values: string[]): { value: string; label: string }[] {
+  return values.map((v) => ({ value: v, label: v }));
+}
+
 function Select({
   label,
   value,
   onChange,
   options,
-  optionLabel,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: string[];
-  optionLabel?: (v: string) => string;
+  options: { value: string; label: string }[];
 }) {
   return (
     <label className="flex items-center gap-1.5 bg-ink-800 border border-ink-600 rounded-md px-2 py-1.5 text-sm">
@@ -191,8 +281,8 @@ function Select({
         className="bg-transparent text-paper-100 focus:outline-none capitalize"
       >
         {options.map((o) => (
-          <option key={o} value={o} className="bg-ink-800 capitalize">
-            {optionLabel ? optionLabel(o) : o}
+          <option key={o.value} value={o.value} className="bg-ink-800 capitalize">
+            {o.label}
           </option>
         ))}
       </select>
